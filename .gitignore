@@ -218,3 +218,6 @@ __marimo__/
 .streamlit/secrets.toml
 data_full/
 data/
+data_single_label_full/
+outputs/
+data.zip

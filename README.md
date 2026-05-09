@@ -3,13 +3,15 @@ Benchmarking data augmentation, GANs, and diffusion models for improving rare di
 
 ## Dataset
 
-Repo uses a simplified single-label subset of NIH ChestX-ray14 prepared for
-augmentation experiments.
+Repo currently contains two simplified single-label NIH ChestX-ray14 layouts:
 
-Current local layout:
+- `data/` - earlier 20% per-class subset
+- `data_single_label_full/` - full single-label subset used by the baseline notebook
+
+Full baseline layout:
 
 ```text
-data/
+data_single_label_full/
 ├── images/
 │   ├── 00000002_000.png
 │   └── ...
@@ -27,32 +29,32 @@ Preprocessing applied:
 
 - removed all images with more than one disease label
 - kept `No Finding` as its own class
-- sampled 20% from each remaining class with seed `42`
-- copied the selected images into one flat `data/images/` directory
-- stored labels in `data/labels.csv`
+- copied the selected images into one flat `data_single_label_full/images/` directory
+- stored labels in `data_single_label_full/labels.csv`
 
 Dataset size:
 
-- images: `18,264`
-- labels: `18,264`
-- disk size: about `6.9 GB`
+- images: `91,324`
+- labels: `91,324`
+- removed multi-label rows: `20,796`
+- disk size: about `35 GB`
 
 Class distribution:
 
 | Class | Images | Share |
 | --- | ---: | ---: |
-| No Finding | 12,072 | 66.10% |
-| Infiltration | 1,909 | 10.45% |
-| Atelectasis | 843 | 4.62% |
-| Effusion | 791 | 4.33% |
-| Nodule | 541 | 2.96% |
-| Pneumothorax | 439 | 2.40% |
-| Mass | 428 | 2.34% |
-| Consolidation | 262 | 1.43% |
-| Pleural_Thickening | 225 | 1.23% |
-| Cardiomegaly | 219 | 1.20% |
-| Emphysema | 178 | 0.97% |
-| Fibrosis | 145 | 0.79% |
-| Edema | 126 | 0.69% |
-| Pneumonia | 64 | 0.35% |
-| Hernia | 22 | 0.12% |
+| No Finding | 60,361 | 66.10% |
+| Infiltration | 9,547 | 10.45% |
+| Atelectasis | 4,215 | 4.62% |
+| Effusion | 3,955 | 4.33% |
+| Nodule | 2,705 | 2.96% |
+| Pneumothorax | 2,194 | 2.40% |
+| Mass | 2,139 | 2.34% |
+| Consolidation | 1,310 | 1.43% |
+| Pleural_Thickening | 1,126 | 1.23% |
+| Cardiomegaly | 1,093 | 1.20% |
+| Emphysema | 892 | 0.98% |
+| Fibrosis | 727 | 0.80% |
+| Edema | 628 | 0.69% |
+| Pneumonia | 322 | 0.35% |
+| Hernia | 110 | 0.12% |
