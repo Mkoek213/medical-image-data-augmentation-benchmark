@@ -1,0 +1,455 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[polish]{babel}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\geometry{margin=2.1cm}
+
+\title{Wyniki eksperymentów augmentacji danych dla NIH ChestX-ray14}
+\author{}
+\date{\today}
+
+\newcommand{\missingresult}{\textcolor{gray}{--}}
+\newcommand{\baselinepath}{outputs/advanced_baselines_full}
+\newcommand{\baselinepathtext}{\texttt{outputs/advanced\_baselines\_full}}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\newcommand{\figslot}[3]{
+\begin{figure}[htbp]
+\centering
+\IfFileExists{#1}{
+  \includegraphics[width=0.94\linewidth]{#1}
+}{
+  \fbox{
+    \begin{minipage}[c][5.2cm][c]{0.9\linewidth}
+    \centering
+    \textbf{Miejsce na wykres}\\[0.4em]
+    \path{#1}\\[0.4em]
+    Po wygenerowaniu pliku zostanie on automatycznie wklejony przy kompilacji.
+    \end{minipage}
+  }
+}
+\caption{#2}
+\label{#3}
+\end{figure}
+}
+
+\begin{document}
+\maketitle
+
+\section{Zakres eksperymentu}
+
+Dokument jest szablonem do raportowania wyników dla eksperymentu z prezentacji:
+porównujemy klasyfikator trenowany na danych oryginalnych z wariantami, które mają poprawić
+rozpoznawanie rzadkich klas w NIH ChestX-ray14. Główne pytanie badawcze brzmi:
+czy dodatkowe dane albo augmentacje poprawiają recall i F1 dla rzadkich patologii,
+a nie tylko accuracy zdominowane przez częste klasy.
+
+Porównywane modele klasyfikacyjne:
+\begin{itemize}
+  \item DenseNet121,
+  \item Swin Tiny.
+\end{itemize}
+
+Docelowe warianty eksperymentalne:
+\begin{enumerate}
+  \item Baseline -- trening na danych oryginalnych.
+  \item Klasyczna augmentacja -- flip, rotate, crop, CLAHE, zmiany jasności/kontrastu, ewentualnie elastic deformation.
+  \item StyleGAN-ADA -- syntetyczne obrazy generowane dla rzadkich klas.
+  \item LDM/Diffusion -- syntetyczne obrazy z modelu dyfuzyjnego.
+\end{enumerate}
+
+Wszystkie dalsze eksperymenty porównujemy przy stałym budżecie 15 epok. W tym raporcie krzywe
+uczenia i czasy treningu baseline są ograniczone do pierwszych 15 epok.
+
+\subsection{Aktualne źródła danych baseline}
+
+Wyniki baseline są zapisane w katalogu \baselinepathtext. W tym dokumencie wpisano już wartości z:
+\begin{itemize}
+  \item \path{outputs/advanced_baselines_full/all_history.csv},
+  \item \path{outputs/advanced_baselines_full/test_summary.csv},
+  \item \path{outputs/advanced_baselines_full/per_class_metrics_available_splits.csv},
+  \item \path{outputs/advanced_baselines_full/densenet121_last_blocks/history.csv},
+  \item \path{outputs/advanced_baselines_full/swin_tiny_last_blocks/history.csv}.
+\end{itemize}
+
+Aktualny baseline używa zapisanego splitu: 58447 obrazów treningowych,
+14611 walidacyjnych oraz 18266 testowych.
+
+\section{Rejestr eksperymentów}
+
+Tę tabelę należy aktualizować po każdym uruchomieniu eksperymentu. Kolumna \textit{Folder wyników}
+powinna wskazywać katalog z plikami \texttt{history.csv}, \texttt{test\_summary.csv}
+i \texttt{test\_per\_class\_metrics.csv}.
+
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{longtable}{L{2.2cm}L{3.0cm}L{5.2cm}L{3.1cm}L{1.6cm}}
+\caption{Lista wariantów eksperymentalnych.}
+\label{tab:experiment-register}\\
+\toprule
+Wariant & Technika & Co porównujemy & Folder wyników & Status \\
+\midrule
+\endfirsthead
+\toprule
+Wariant & Technika & Co porównujemy & Folder wyników & Status \\
+\midrule
+\endhead
+Baseline & Brak dodatkowej augmentacji & Punkt odniesienia dla obu modeli & \path{outputs/advanced_baselines_full} & Gotowe \\
+Aug. geometryczna & Flip, rotate, crop, CLAHE, brightness, contrast & Czy prosta augmentacja poprawia generalizację bez generowania nowych patologii & \path{outputs/geometric_aug_train_3000_full15} & Gotowe \\
+StyleGAN-ADA & Generator trenowany dla rzadkich klas & Czy syntetyczne obrazy poprawiają recall/F1 rzadkich klas & \path{outputs/stylegan2_all_minority_256px_aug_train_full15} & Gotowe \\
+LDM/Diffusion & Model dyfuzyjny lub latent diffusion & Czy najbardziej kosztowna synteza daje najlepszy zysk jakościowy & \missingresult & Do uzupełnienia \\
+\bottomrule
+\end{longtable}
+\normalsize
+\setlength{\tabcolsep}{6pt}
+
+\section{Krzywe uczenia}
+
+W tej sekcji porównujemy przebieg treningu dla każdego modelu osobno. Każdy wykres pokazuje jedną
+metrykę, a krzywe odpowiadają wariantom eksperymentu: baseline, augmentacji geometrycznej oraz,
+po uzupełnieniu wyników, StyleGAN-ADA i LDM/Diffusion. Dzięki temu nie tworzymy wykresów z pojedynczą
+krzywą dla jednej metody. Wszystkie krzywe są przycięte do pierwszych 15 epok.
+
+Workflow: po treningu uruchomić \texttt{scripts/plot\_baseline\_vs\_geometric\_curves.py}; skrypt
+wygeneruje wykresy tylko dla wariantów, których pliki wynikowe są dostępne.
+
+\subsection{DenseNet121}
+
+\figslot{figures/learning_curves/densenet121_methods_train_loss.png}
+{DenseNet121: porównanie train loss dla dostępnych wariantów eksperymentu.}
+{fig:densenet-methods-train-loss}
+
+\figslot{figures/learning_curves/densenet121_methods_val_loss.png}
+{DenseNet121: porównanie validation loss dla dostępnych wariantów eksperymentu.}
+{fig:densenet-methods-val-loss}
+
+\figslot{figures/learning_curves/densenet121_methods_train_macro_f1.png}
+{DenseNet121: porównanie train macro F1 dla dostępnych wariantów eksperymentu.}
+{fig:densenet-methods-train-f1}
+
+\figslot{figures/learning_curves/densenet121_methods_val_macro_f1.png}
+{DenseNet121: porównanie validation macro F1 dla dostępnych wariantów eksperymentu.}
+{fig:densenet-methods-val-f1}
+
+\figslot{figures/learning_curves/densenet121_methods_val_accuracy.png}
+{DenseNet121: porównanie validation accuracy dla dostępnych wariantów eksperymentu.}
+{fig:densenet-methods-val-accuracy}
+
+\figslot{figures/learning_curves/densenet121_methods_val_balanced_accuracy.png}
+{DenseNet121: porównanie validation balanced accuracy dla dostępnych wariantów eksperymentu.}
+{fig:densenet-methods-val-balanced-accuracy}
+
+\figslot{figures/learning_curves/densenet121_methods_val_macro_recall.png}
+{DenseNet121: porównanie validation macro recall dla dostępnych wariantów eksperymentu.}
+{fig:densenet-methods-val-recall}
+
+\subsection{Swin Tiny}
+
+\figslot{figures/learning_curves/swin_tiny_methods_train_loss.png}
+{Swin Tiny: porównanie train loss dla dostępnych wariantów eksperymentu.}
+{fig:swin-methods-train-loss}
+
+\figslot{figures/learning_curves/swin_tiny_methods_val_loss.png}
+{Swin Tiny: porównanie validation loss dla dostępnych wariantów eksperymentu.}
+{fig:swin-methods-val-loss}
+
+\figslot{figures/learning_curves/swin_tiny_methods_train_macro_f1.png}
+{Swin Tiny: porównanie train macro F1 dla dostępnych wariantów eksperymentu.}
+{fig:swin-methods-train-f1}
+
+\figslot{figures/learning_curves/swin_tiny_methods_val_macro_f1.png}
+{Swin Tiny: porównanie validation macro F1 dla dostępnych wariantów eksperymentu.}
+{fig:swin-methods-val-f1}
+
+\figslot{figures/learning_curves/swin_tiny_methods_val_accuracy.png}
+{Swin Tiny: porównanie validation accuracy dla dostępnych wariantów eksperymentu.}
+{fig:swin-methods-val-accuracy}
+
+\figslot{figures/learning_curves/swin_tiny_methods_val_balanced_accuracy.png}
+{Swin Tiny: porównanie validation balanced accuracy dla dostępnych wariantów eksperymentu.}
+{fig:swin-methods-val-balanced-accuracy}
+
+\figslot{figures/learning_curves/swin_tiny_methods_val_macro_recall.png}
+{Swin Tiny: porównanie validation macro recall dla dostępnych wariantów eksperymentu.}
+{fig:swin-methods-val-recall}
+
+\clearpage
+\section{Ogólne metryki, czas treningu i liczba obrazów}
+
+Warianty augmentacji należy wpisywać w osobnych wierszach dla każdego modelu.
+Kolumna \textit{Synth. img.} oznacza liczbę obrazów syntetycznych lub dodatkowo wygenerowanych,
+a \textit{Train img.} oznacza łączną liczbę przykładów użytych podczas treningu klasyfikatora.
+
+\subsection{Liczność klas w zbiorze treningowym}
+
+Tabela pokazuje, ile przykładów każdej klasy znajduje się w zbiorze treningowym dla danego wariantu
+eksperymentu. Liczności dotyczą danych wejściowych do treningu klasyfikatora i są takie same dla
+DenseNet121 oraz Swin Tiny. Walidacja i test pozostają takie same jak w baseline.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Liczność klas w train split dla kolejnych wariantów eksperymentu.}
+\label{tab:train-class-counts}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrr}
+\toprule
+Klasa & Baseline & Aug. geometryczna & StyleGAN-ADA & LDM/Diffusion \\
+\midrule
+Atelectasis & 2698 & 3000 & 3000 & \missingresult \\
+Cardiomegaly & 699 & 3000 & 3000 & \missingresult \\
+Consolidation & 839 & 3000 & 3000 & \missingresult \\
+Edema & 402 & 3000 & 3000 & \missingresult \\
+Effusion & 2532 & 3000 & 3000 & \missingresult \\
+Emphysema & 571 & 3000 & 3000 & \missingresult \\
+Fibrosis & 465 & 3000 & 3000 & \missingresult \\
+Hernia & 70 & 3000 & 3000 & \missingresult \\
+Infiltration & 6109 & 6109 & 6109 & \missingresult \\
+Mass & 1369 & 3000 & 3000 & \missingresult \\
+No Finding & 38631 & 38631 & 38631 & \missingresult \\
+Nodule & 1731 & 3000 & 3000 & \missingresult \\
+Pleural\_Thickening & 721 & 3000 & 3000 & \missingresult \\
+Pneumonia & 206 & 3000 & 3000 & \missingresult \\
+Pneumothorax & 1404 & 3000 & 3000 & \missingresult \\
+\midrule
+\textbf{Razem} & \textbf{58447} & \textbf{83740} & \textbf{83740} & \missingresult \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\subsection{DenseNet121}
+
+\begin{table}[htbp]
+\centering
+\scriptsize
+\caption{DenseNet121: metryki globalne i koszt treningu.}
+\label{tab:densenet-summary}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrrrrrr}
+\toprule
+Wariant & Orig. img. & Synth. img. & Train img. & Epoki & Best ep. & Czas [h] & Val F1 & Acc. & Bal. acc. & Macro F1 \\
+\midrule
+Baseline & 58447 & 0 & 58447 & 15 & 10 & 1.439 & 0.146 & 0.271 & 0.199 & 0.143 \\
+Aug. geometryczna & 58447 & 25293 & 83740 & 15 & 14 & 1.910 & 0.164 & 0.385 & 0.202 & 0.171 \\
+StyleGAN-ADA & 58447 & 25293 & 83740 & 15 & 4 & 1.883 & 0.150 & 0.406 & 0.192 & 0.153 \\
+LDM/Diffusion & \missingresult & \missingresult & \missingresult & \missingresult & \missingresult & \missingresult & \missingresult & \missingresult & \missingresult & \missingresult \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\subsection{Swin Tiny}
+
+\begin{table}[htbp]
+\centering
+\scriptsize
+\caption{Swin Tiny: metryki globalne i koszt treningu.}
+\label{tab:swin-summary}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrrrrrr}
+\toprule
+Wariant & Orig. img. & Synth. img. & Train img. & Epoki & Best ep. & Czas [h] & Val F1 & Acc. & Bal. acc. & Macro F1 \\
+\midrule
+Baseline & 58447 & 0 & 58447 & 15 & 15 & 2.097 & 0.163 & 0.392 & 0.210 & 0.169 \\
+Aug. geometryczna & 58447 & 25293 & 83740 & 15 & 10 & 2.843 & 0.175 & 0.394 & 0.206 & 0.172 \\
+StyleGAN-ADA & 58447 & 25293 & 83740 & 15 & 5 & 2.778 & 0.170 & 0.372 & 0.238 & 0.181 \\
+LDM/Diffusion & \missingresult & \missingresult & \missingresult & \missingresult & \missingresult & \missingresult & \missingresult & \missingresult & \missingresult & \missingresult \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\subsection{Wykresy metryk testowych}
+
+Poniższe wykresy porównują końcowe metryki testowe dla dostępnych wariantów eksperymentu.
+Ponieważ test jest liczony po treningu, są to wykresy słupkowe zamiast krzywych po epokach.
+
+\figslot{figures/test_metrics/densenet121_test_macro_f1_comparison.png}
+{DenseNet121: porównanie test macro F1 dla dostępnych wariantów eksperymentu.}
+{fig:densenet-test-macro-f1}
+
+\figslot{figures/test_metrics/densenet121_test_accuracy_comparison.png}
+{DenseNet121: porównanie test accuracy dla dostępnych wariantów eksperymentu.}
+{fig:densenet-test-accuracy}
+
+\figslot{figures/test_metrics/densenet121_test_balanced_accuracy_comparison.png}
+{DenseNet121: porównanie test balanced accuracy dla dostępnych wariantów eksperymentu.}
+{fig:densenet-test-balanced-accuracy}
+
+\figslot{figures/test_metrics/densenet121_test_macro_recall_comparison.png}
+{DenseNet121: porównanie test macro recall dla dostępnych wariantów eksperymentu.}
+{fig:densenet-test-macro-recall}
+
+\figslot{figures/test_metrics/swin_tiny_test_macro_f1_comparison.png}
+{Swin Tiny: porównanie test macro F1 dla dostępnych wariantów eksperymentu.}
+{fig:swin-test-macro-f1}
+
+\figslot{figures/test_metrics/swin_tiny_test_accuracy_comparison.png}
+{Swin Tiny: porównanie test accuracy dla dostępnych wariantów eksperymentu.}
+{fig:swin-test-accuracy}
+
+\figslot{figures/test_metrics/swin_tiny_test_balanced_accuracy_comparison.png}
+{Swin Tiny: porównanie test balanced accuracy dla dostępnych wariantów eksperymentu.}
+{fig:swin-test-balanced-accuracy}
+
+\figslot{figures/test_metrics/swin_tiny_test_macro_recall_comparison.png}
+{Swin Tiny: porównanie test macro recall dla dostępnych wariantów eksperymentu.}
+{fig:swin-test-macro-recall}
+
+\subsection{Dodatkowe metryki do uzupełnienia}
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Miejsce na dodatkowe metryki jakości danych syntetycznych i kosztu generowania.}
+\label{tab:generation-quality}
+\begin{tabular}{llrrrr}
+\toprule
+Model & Wariant & Czas generowania [h] & VRAM [GB] & FID & Ocena jakości klinicznej \\
+\midrule
+DenseNet121 & Aug. geometryczna & \missingresult & \missingresult & nie dotyczy & \missingresult \\
+DenseNet121 & StyleGAN-ADA & \missingresult & \missingresult & \missingresult & \missingresult \\
+DenseNet121 & LDM/Diffusion & \missingresult & \missingresult & \missingresult & \missingresult \\
+Swin Tiny & Aug. geometryczna & \missingresult & \missingresult & nie dotyczy & \missingresult \\
+Swin Tiny & StyleGAN-ADA & \missingresult & \missingresult & \missingresult & \missingresult \\
+Swin Tiny & LDM/Diffusion & \missingresult & \missingresult & \missingresult & \missingresult \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\clearpage
+\section{Wyniki na poszczególnych klasach}
+
+Zgodnie z prezentacją najważniejsze są recall i F1 dla rzadkich klas. Dlatego tabele porównawcze
+mają miejsce na recall/F1 dla każdej techniki. Precision dla baseline jest dostępne w plikach
+\texttt{test\_per\_class\_metrics.csv}; jeśli będzie potrzebne w raporcie końcowym, można dodać
+analogiczne kolumny.
+
+\subsection{DenseNet121}
+
+\scriptsize
+\begin{longtable}{lrrrrrrrrr}
+\caption{DenseNet121: recall i F1 per klasa na zbiorze testowym.}
+\label{tab:densenet-per-class}\\
+\toprule
+Klasa & Support & B Rec. & B F1 & Geom Rec. & Geom F1 & GAN Rec. & GAN F1 & Diff Rec. & Diff F1 \\
+\midrule
+\endfirsthead
+\toprule
+Klasa & Support & B Rec. & B F1 & Geom Rec. & Geom F1 & GAN Rec. & GAN F1 & Diff Rec. & Diff F1 \\
+\midrule
+\endhead
+Atelectasis & 843 & 0.325 & 0.201 & 0.333 & 0.200 & 0.435 & 0.212 & \missingresult & \missingresult \\
+Cardiomegaly & 219 & 0.237 & 0.154 & 0.247 & 0.200 & 0.242 & 0.170 & \missingresult & \missingresult \\
+Consolidation & 262 & 0.210 & 0.065 & 0.061 & 0.054 & 0.000 & 0.000 & \missingresult & \missingresult \\
+Edema & 125 & 0.128 & 0.129 & 0.112 & 0.120 & 0.016 & 0.029 & \missingresult & \missingresult \\
+Effusion & 791 & 0.382 & 0.304 & 0.393 & 0.282 & 0.374 & 0.320 & \missingresult & \missingresult \\
+Emphysema & 179 & 0.106 & 0.118 & 0.134 & 0.149 & 0.106 & 0.125 & \missingresult & \missingresult \\
+Fibrosis & 146 & 0.164 & 0.097 & 0.158 & 0.151 & 0.055 & 0.080 & \missingresult & \missingresult \\
+Hernia & 22 & 0.000 & 0.000 & 0.045 & 0.061 & 0.000 & 0.000 & \missingresult & \missingresult \\
+Infiltration & 1910 & 0.396 & 0.225 & 0.428 & 0.254 & 0.498 & 0.270 & \missingresult & \missingresult \\
+Mass & 428 & 0.180 & 0.093 & 0.145 & 0.113 & 0.068 & 0.099 & \missingresult & \missingresult \\
+No Finding & 12072 & 0.259 & 0.393 & 0.430 & 0.554 & 0.447 & 0.573 & \missingresult & \missingresult \\
+Nodule & 541 & 0.152 & 0.099 & 0.165 & 0.118 & 0.140 & 0.133 & \missingresult & \missingresult \\
+Pleural\_Thickening & 225 & 0.116 & 0.056 & 0.124 & 0.100 & 0.018 & 0.027 & \missingresult & \missingresult \\
+Pneumonia & 64 & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 & \missingresult & \missingresult \\
+Pneumothorax & 439 & 0.326 & 0.208 & 0.262 & 0.213 & 0.478 & 0.251 & \missingresult & \missingresult \\
+\bottomrule
+\end{longtable}
+\normalsize
+
+\subsection{Swin Tiny}
+
+\scriptsize
+\begin{longtable}{lrrrrrrrrr}
+\caption{Swin Tiny: recall i F1 per klasa na zbiorze testowym.}
+\label{tab:swin-per-class}\\
+\toprule
+Klasa & Support & B Rec. & B F1 & Geom Rec. & Geom F1 & GAN Rec. & GAN F1 & Diff Rec. & Diff F1 \\
+\midrule
+\endfirsthead
+\toprule
+Klasa & Support & B Rec. & B F1 & Geom Rec. & Geom F1 & GAN Rec. & GAN F1 & Diff Rec. & Diff F1 \\
+\midrule
+\endhead
+Atelectasis & 843 & 0.298 & 0.187 & 0.316 & 0.220 & 0.441 & 0.242 & \missingresult & \missingresult \\
+Cardiomegaly & 219 & 0.274 & 0.201 & 0.251 & 0.192 & 0.434 & 0.190 & \missingresult & \missingresult \\
+Consolidation & 262 & 0.065 & 0.059 & 0.061 & 0.068 & 0.164 & 0.091 & \missingresult & \missingresult \\
+Edema & 125 & 0.128 & 0.120 & 0.096 & 0.133 & 0.160 & 0.149 & \missingresult & \missingresult \\
+Effusion & 791 & 0.440 & 0.284 & 0.405 & 0.317 & 0.405 & 0.349 & \missingresult & \missingresult \\
+Emphysema & 179 & 0.123 & 0.113 & 0.117 & 0.115 & 0.073 & 0.100 & \missingresult & \missingresult \\
+Fibrosis & 146 & 0.110 & 0.103 & 0.110 & 0.099 & 0.123 & 0.132 & \missingresult & \missingresult \\
+Hernia & 22 & 0.136 & 0.102 & 0.045 & 0.080 & 0.000 & 0.000 & \missingresult & \missingresult \\
+Infiltration & 1910 & 0.373 & 0.253 & 0.434 & 0.280 & 0.455 & 0.266 & \missingresult & \missingresult \\
+Mass & 428 & 0.231 & 0.143 & 0.313 & 0.135 & 0.182 & 0.199 & \missingresult & \missingresult \\
+No Finding & 12072 & 0.446 & 0.569 & 0.440 & 0.564 & 0.384 & 0.524 & \missingresult & \missingresult \\
+Nodule & 541 & 0.140 & 0.103 & 0.155 & 0.101 & 0.242 & 0.142 & \missingresult & \missingresult \\
+Pleural\_Thickening & 225 & 0.067 & 0.074 & 0.071 & 0.052 & 0.093 & 0.086 & \missingresult & \missingresult \\
+Pneumonia & 64 & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 & \missingresult & \missingresult \\
+Pneumothorax & 439 & 0.323 & 0.226 & 0.280 & 0.229 & 0.408 & 0.248 & \missingresult & \missingresult \\
+\bottomrule
+\end{longtable}
+\normalsize
+
+\section{Wykresy wyników per klasa}
+
+Tutaj można wkleić gotowe wykresy słupkowe F1/recall per klasa. Najczytelniejszy układ to osobny
+wykres dla każdego modelu, gdzie na osi X są klasy, a kolory oznaczają baseline, klasyczną augmentację,
+StyleGAN-ADA i LDM/Diffusion.
+
+\figslot{figures/per_class/densenet121_per_class_f1_comparison.png}
+{DenseNet121: porównanie F1 per klasa dla wszystkich metod.}
+{fig:densenet-per-class-f1}
+
+\figslot{figures/per_class/densenet121_rare_classes_recall_comparison.png}
+{DenseNet121: porównanie recall dla rzadkich klas.}
+{fig:densenet-rare-recall}
+
+\figslot{figures/per_class/swin_tiny_per_class_f1_comparison.png}
+{Swin Tiny: porównanie F1 per klasa dla wszystkich metod.}
+{fig:swin-per-class-f1}
+
+\figslot{figures/per_class/swin_tiny_rare_classes_recall_comparison.png}
+{Swin Tiny: porównanie recall dla rzadkich klas.}
+{fig:swin-rare-recall}
+
+\section{Notatki do interpretacji}
+
+\begin{itemize}
+  \item Accuracy traktujemy jako metrykę pomocniczą, bo przy dużym niezbalansowaniu klas może ukrywać słabe wyniki dla patologii rzadkich.
+  \item Najważniejsze porównania końcowe: macro F1, balanced accuracy, macro recall oraz recall/F1 dla klas rzadkich.
+  \item W szczególności należy obserwować klasy o małym wsparciu testowym: Hernia, Pneumonia, Edema, Fibrosis, Emphysema, Cardiomegaly i Pleural\_Thickening.
+  \item Jeśli metoda poprawia No Finding kosztem rzadkich patologii, nie traktujemy tego jako głównego sukcesu projektu.
+\end{itemize}
+
+\section{Miejsca na wnioski końcowe}
+
+\subsection{DenseNet121}
+
+\begin{itemize}
+  \item Najlepszy wariant według macro F1: \missingresult
+  \item Najlepszy wariant według recall rzadkich klas: \missingresult
+  \item Koszt względem baseline: \missingresult
+  \item Krótka interpretacja: \missingresult
+\end{itemize}
+
+\subsection{Swin Tiny}
+
+\begin{itemize}
+  \item Najlepszy wariant według macro F1: \missingresult
+  \item Najlepszy wariant według recall rzadkich klas: \missingresult
+  \item Koszt względem baseline: \missingresult
+  \item Krótka interpretacja: \missingresult
+\end{itemize}
+
+\end{document}
