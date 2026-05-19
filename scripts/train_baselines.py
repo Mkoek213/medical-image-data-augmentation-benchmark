@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import random
 import time
+import argparse
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -51,6 +52,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 class Config:
     data_dir: Path = ROOT_DIR / "data_single_label_full"
     output_dir: Path = ROOT_DIR / "outputs" / "advanced_baselines_full"
+    splits_dir: Path | None = None
 
     # ── VRAM-optimised for 16 GB ────────────────────────────────────────
     image_size: int = 512                 # 1024 → 512  (fits 16 GB with AMP)
@@ -58,7 +60,7 @@ class Config:
     accumulation_steps: int = 1           # default; overridden per model below
     num_workers: int = 4                  # 8   → 4     (less host RAM)
 
-    epochs: int = 50
+    epochs: int = 15
     seed: int = 42
 
     # Transfer-learning setup – no image augmentation for the baseline.
@@ -76,7 +78,7 @@ class Config:
     grad_clip_norm: float | None = 1.0
     monitor_metric: str = "val_macro_f1"
     min_delta: float = 1e-4
-    early_stopping_patience: int = 6
+    early_stopping_patience: int = 15
 
     # Scheduler.
     scheduler: str = "reduce_on_plateau"  # reduce_on_plateau | cosine | none
@@ -128,6 +130,7 @@ def make_patient_split(
         train = train_val.iloc[train_idx].copy()
         val = train_val.iloc[val_idx].copy()
         return train, val, test
+
     except Exception as exc:
         print("StratifiedGroupKFold failed, falling back to GroupShuffleSplit:", repr(exc))
         splitter = GroupShuffleSplit(n_splits=1, test_size=0.20, random_state=seed)
@@ -139,6 +142,49 @@ def make_patient_split(
         train = train_val.iloc[train_idx].copy()
         val = train_val.iloc[val_idx].copy()
         return train, val, test
+
+
+def resolve_image_path(raw_path: str | Path, split_dir: Path | None = None) -> Path:
+    """Resolve image paths written by scripts or notebooks from different CWDs."""
+    path = Path(raw_path)
+    if path.is_absolute():
+        return path
+
+    candidates = [
+        (ROOT_DIR / path).resolve(),
+        (ROOT_DIR / "notebooks" / path).resolve(),
+    ]
+    if split_dir is not None:
+        candidates.append((split_dir / path).resolve())
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+def load_predefined_splits(cfg: Config) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    if cfg.splits_dir is None:
+        raise ValueError("cfg.splits_dir is required for predefined splits.")
+
+    split_dir = cfg.splits_dir
+    frames = []
+    for split_name in ("train", "val", "test"):
+        path = split_dir / f"{split_name}_split.csv"
+        if not path.exists():
+            raise FileNotFoundError(f"Missing predefined split: {path}")
+        frame = pd.read_csv(path)
+        if "image_path" not in frame.columns:
+            images_dir = cfg.data_dir / "images"
+            frame["image_path"] = frame["image"].map(lambda name: images_dir / name)
+        frame["image_path"] = frame["image_path"].map(
+            lambda p: str(resolve_image_path(p, split_dir=split_dir))
+        )
+        frame["exists"] = frame["image_path"].map(lambda p: Path(p).exists())
+        frames.append(frame)
+
+    train_df, val_df, test_df = frames
+    return train_df, val_df, test_df
 
 
 # ── 4. Dataset ───────────────────────────────────────────────────────────────
@@ -389,12 +435,15 @@ def predict(
     loader: DataLoader,
     device: torch.device,
     cfg: Config,
+    max_batches: int | None = None,
 ) -> tuple[list[int], list[int]]:
     model.eval()
     amp_enabled = bool(cfg.use_amp and device.type == "cuda")
     y_true: list[int] = []
     y_pred: list[int] = []
-    for images, targets in tqdm(loader, leave=False, desc="predict"):
+    for batch_idx, (images, targets) in enumerate(tqdm(loader, leave=False, desc="predict")):
+        if max_batches is not None and batch_idx >= max_batches:
+            break
         images = images.to(device, non_blocking=True)
         with torch.amp.autocast(device_type=device.type, enabled=amp_enabled):
             logits = model(images)
@@ -574,7 +623,7 @@ def evaluate_on_test(
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
 
-    y_true, y_pred = predict(model, test_loader, device, cfg)
+    y_true, y_pred = predict(model, test_loader, device, cfg, max_batches=cfg.max_eval_batches)
 
     report = classification_report(
         y_true, y_pred,
@@ -609,8 +658,44 @@ def evaluate_on_test(
 
 # ── 10. Main ─────────────────────────────────────────────────────────────────
 
-def main() -> None:
-    cfg = Config()
+def parse_args() -> argparse.Namespace:
+    defaults = Config()
+    parser = argparse.ArgumentParser(description="Train baseline-compatible CXR classifiers.")
+    parser.add_argument("--data-dir", type=Path, default=defaults.data_dir)
+    parser.add_argument("--output-dir", type=Path, default=defaults.output_dir)
+    parser.add_argument(
+        "--splits-dir",
+        type=Path,
+        default=None,
+        help="Directory containing train_split.csv, val_split.csv and test_split.csv.",
+    )
+    parser.add_argument("--epochs", type=int, default=defaults.epochs)
+    parser.add_argument("--num-workers", type=int, default=defaults.num_workers)
+    parser.add_argument(
+        "--early-stopping-patience",
+        type=int,
+        default=defaults.early_stopping_patience,
+    )
+    parser.add_argument("--seed", type=int, default=defaults.seed)
+    parser.add_argument("--max-train-batches", type=int, default=None)
+    parser.add_argument("--max-eval-batches", type=int, default=None)
+    return parser.parse_args()
+
+
+def main(cfg: Config | None = None) -> None:
+    if cfg is None:
+        args = parse_args()
+        cfg = Config(
+            data_dir=args.data_dir,
+            output_dir=args.output_dir,
+            splits_dir=args.splits_dir,
+            epochs=args.epochs,
+            early_stopping_patience=args.early_stopping_patience,
+            seed=args.seed,
+            num_workers=args.num_workers,
+            max_train_batches=args.max_train_batches,
+            max_eval_batches=args.max_eval_batches,
+        )
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -620,24 +705,34 @@ def main() -> None:
     print(f"accum_steps   : {cfg.accumulation_steps}")
     print(f"effective_bs  : {cfg.batch_size * cfg.accumulation_steps}")
     print(f"use_amp       : {cfg.use_amp}")
+    print(f"epochs        : {cfg.epochs}")
 
     labels_csv = cfg.data_dir / "labels.csv"
     images_dir = cfg.data_dir / "images"
     print(f"labels_csv    : {labels_csv.resolve()}")
     print(f"images_dir    : {images_dir.resolve()}")
     print(f"output_dir    : {cfg.output_dir.resolve()}")
+    print(f"splits_dir    : {cfg.splits_dir.resolve() if cfg.splits_dir else 'new patient split'}")
 
     seed_everything(cfg.seed)
 
-    # ── Load labels ──────────────────────────────────────────────────────
-    df = pd.read_csv(labels_csv)
-    df["image_path"] = df["image"].map(lambda name: images_dir / name)
-    df["exists"] = df["image_path"].map(lambda p: p.exists())
-    print(f"rows          : {len(df)}")
-    print(f"images on disk: {df['exists'].sum()}")
-    assert df["exists"].all(), "Some images listed in labels.csv are missing."
+    # ── Load labels / predefined splits ─────────────────────────────────
+    if cfg.splits_dir is None:
+        df = pd.read_csv(labels_csv)
+        df["image_path"] = df["image"].map(lambda name: images_dir / name)
+        df["exists"] = df["image_path"].map(lambda p: p.exists())
+        print(f"rows          : {len(df)}")
+        print(f"images on disk: {df['exists'].sum()}")
+        assert df["exists"].all(), "Some images listed in labels.csv are missing."
+        classes = sorted(df["label"].unique())
+    else:
+        train_df, val_df, test_df = load_predefined_splits(cfg)
+        df = pd.concat([train_df, val_df, test_df], ignore_index=True)
+        print(f"rows          : {len(df)}")
+        print(f"images on disk: {df['exists'].sum()}")
+        assert df["exists"].all(), "Some images listed in predefined splits are missing."
+        classes = sorted(df["label"].unique())
 
-    classes = sorted(df["label"].unique())
     label_to_idx = {label: idx for idx, label in enumerate(classes)}
     df["target"] = df["label"].map(label_to_idx)
     num_classes = len(classes)
@@ -647,7 +742,12 @@ def main() -> None:
         json.dump(label_to_idx, f, indent=2)
 
     # ── Patient split ────────────────────────────────────────────────────
-    train_df, val_df, test_df = make_patient_split(df, cfg.seed)
+    if cfg.splits_dir is None:
+        train_df, val_df, test_df = make_patient_split(df, cfg.seed)
+    else:
+        for split_frame in (train_df, val_df, test_df):
+            split_frame["target"] = split_frame["label"].map(label_to_idx)
+
     for name, sdf in [("train", train_df), ("val", val_df), ("test", test_df)]:
         print(f"  {name:5s}: {len(sdf):6d} samples, {sdf['patient_id'].nunique():5d} patients")
     assert set(train_df["patient_id"]).isdisjoint(set(val_df["patient_id"]))
